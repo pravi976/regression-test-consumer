@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @EnableFeignClients
 public class RegressionTestDownstreamApplication {
     public static void main(String[] args) {
+        System.out.println("Regression Test Downstream Application Started");
         SpringApplication.run(RegressionTestDownstreamApplication.class, args);
     }
 }
