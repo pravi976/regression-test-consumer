@@ -4,14 +4,66 @@ default_branch: develop
 services_root: regression/services
 build_tool: gradle
 commands:
-  pre_build: []
+  pre_build:
+    - 'chmod +x ./gradlew'
   build:
-    - '.\gradlew.bat --gradle-user-home .gradle-home clean test bootJar'
+    - './gradlew --gradle-user-home .gradle-home clean test bootJar'
   post_build: []
   pre_test:
-    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$producerJar = Resolve-Path ''..\regression-test-producer\build\libs\regression-test-producer-1.0.0-SNAPSHOT.jar''; $producer = Start-Process -FilePath ''java'' -ArgumentList ''-jar'', $producerJar -PassThru -WindowStyle Hidden; Set-Content ''.regauto-producer.pid'' $producer.Id; for ($i = 0; $i -lt 30; $i++) { try { Invoke-RestMethod ''http://localhost:8091/api/upstream/ops/status'' | Out-Null; break } catch { Start-Sleep -Seconds 1 } }; $consumerJar = Resolve-Path ''.\build\libs\regression-test-consumer-1.0.0-SNAPSHOT.jar''; $consumer = Start-Process -FilePath ''java'' -ArgumentList ''-jar'', $consumerJar -PassThru -WindowStyle Hidden; Set-Content ''.regauto-consumer.pid'' $consumer.Id; for ($i = 0; $i -lt 30; $i++) { try { Invoke-RestMethod ''http://localhost:8092/api/downstream/ops/status'' | Out-Null; exit 0 } catch { Start-Sleep -Seconds 1 } }; throw ''consumer app did not become ready''' 
+    - |
+      set -e
+      PRODUCER_JAR_PATH="$(ls -1 ../regression-test-producer/build/libs/regression-test-producer-*.jar 2>/dev/null | head -n 1)"
+      if [ -z "$PRODUCER_JAR_PATH" ]; then
+        echo "Producer jar not found under ../regression-test-producer/build/libs" >&2
+        ls -la ../regression-test-producer/build/libs || true
+        exit 1
+      fi
+      java -jar "$PRODUCER_JAR_PATH" >/dev/null 2>&1 &
+      echo $! > .regauto-producer.pid
+      i=0
+      while [ $i -lt 60 ]; do
+        if curl -fsS "http://localhost:8091/api/upstream/ops/status" >/dev/null 2>&1; then
+          break
+        fi
+        sleep 1
+        i=$((i+1))
+      done
+      if [ $i -ge 60 ]; then
+        echo "producer app did not become ready" >&2
+        exit 1
+      fi
+
+      CONSUMER_JAR_PATH="$(ls -1 build/libs/regression-test-consumer-*.jar 2>/dev/null | head -n 1)"
+      if [ -z "$CONSUMER_JAR_PATH" ]; then
+        echo "Consumer jar not found under build/libs" >&2
+        ls -la build/libs || true
+        exit 1
+      fi
+      java -jar "$CONSUMER_JAR_PATH" >/dev/null 2>&1 &
+      echo $! > .regauto-consumer.pid
+      i=0
+      while [ $i -lt 60 ]; do
+        if curl -fsS "http://localhost:8092/api/downstream/ops/status" >/dev/null 2>&1; then
+          exit 0
+        fi
+        sleep 1
+        i=$((i+1))
+      done
+      echo "consumer app did not become ready" >&2
+      exit 1
   post_test:
-    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$files = ''.regauto-consumer.pid'', ''.regauto-producer.pid''; foreach ($file in $files) { if (Test-Path $file) { Remove-Item $file -Force -ErrorAction SilentlyContinue } }; foreach ($port in 8092, 8091) { $connection = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($connection) { Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue } }; exit 0"'
+    - |
+      set +e
+      for file in .regauto-consumer.pid .regauto-producer.pid; do
+        if [ -f "$file" ]; then
+          PID="$(cat "$file")"
+          kill "$PID" >/dev/null 2>&1
+          sleep 1
+          kill -9 "$PID" >/dev/null 2>&1
+          rm -f "$file"
+        fi
+      done
+      exit 0
 gate_policies:
   level3:
     enabled: true
