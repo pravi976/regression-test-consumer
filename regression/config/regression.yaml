@@ -1,0 +1,35 @@
+repository: regression-test-consumer
+owner: platform-regression
+default_branch: develop
+services_root: regression/services
+build_tool: gradle
+commands:
+  pre_build: []
+  build:
+    - '.\gradlew.bat --gradle-user-home .gradle-home clean test bootJar'
+  post_build: []
+  pre_test:
+    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$producerJar = Resolve-Path ''..\regression-test-producer\build\libs\regression-test-producer-1.0.0-SNAPSHOT.jar''; $producer = Start-Process -FilePath ''java'' -ArgumentList ''-jar'', $producerJar -PassThru -WindowStyle Hidden; Set-Content ''.regauto-producer.pid'' $producer.Id; for ($i = 0; $i -lt 30; $i++) { try { Invoke-RestMethod ''http://localhost:8091/api/upstream/ops/status'' | Out-Null; break } catch { Start-Sleep -Seconds 1 } }; $consumerJar = Resolve-Path ''.\build\libs\regression-test-consumer-1.0.0-SNAPSHOT.jar''; $consumer = Start-Process -FilePath ''java'' -ArgumentList ''-jar'', $consumerJar -PassThru -WindowStyle Hidden; Set-Content ''.regauto-consumer.pid'' $consumer.Id; for ($i = 0; $i -lt 30; $i++) { try { Invoke-RestMethod ''http://localhost:8092/api/downstream/ops/status'' | Out-Null; exit 0 } catch { Start-Sleep -Seconds 1 } }; throw ''consumer app did not become ready''' 
+  post_test:
+    - 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$files = ''.regauto-consumer.pid'', ''.regauto-producer.pid''; foreach ($file in $files) { if (Test-Path $file) { Remove-Item $file -Force -ErrorAction SilentlyContinue } }; foreach ($port in 8092, 8091) { $connection = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($connection) { Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue } }; exit 0"'
+gate_policies:
+  level3:
+    enabled: true
+    reason: Downstream integration regression is active
+  level4:
+    enabled: true
+    reason: Downstream end-to-end regression is active
+  level5:
+    enabled: true
+    reason: Downstream operational regression is active
+service_owners:
+  downstream-customer-journey: downstream-team
+impact_map:
+  src/main/java/com/enterprise/regression/downstream/client/**:
+    - downstream-customer-journey
+  src/main/java/com/enterprise/regression/downstream/journey/**:
+    - downstream-customer-journey
+  src/main/java/com/enterprise/regression/downstream/ops/**:
+    - downstream-customer-journey
+  src/main/resources/**:
+    - downstream-customer-journey
