@@ -4,7 +4,7 @@ team: downstream-team
 microservice: downstream-customer-journey
 service_type: python
 tags: [level5, operational, resilience, downstream-customer-journey, release]
-branches: [release]
+branches: [main, release]
 severity: high
 python:
   script: regression/executors/downstream_customer_journey.py

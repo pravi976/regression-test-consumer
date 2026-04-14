@@ -4,7 +4,7 @@ team: downstream-team
 microservice: downstream-customer-journey
 service_type: python
 tags: [level4, e2e, journey, downstream-customer-journey, release]
-branches: [release]
+branches: [main, release]
 severity: critical
 python:
   script: regression/executors/downstream_customer_journey.py
