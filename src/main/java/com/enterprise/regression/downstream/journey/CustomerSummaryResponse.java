@@ -10,6 +10,7 @@ public record CustomerSummaryResponse(
         String lastOrderId,
         BigDecimal totalOrderValue,
         String currency,
-        String upstreamStatus
+        String upstreamStatus,
+        String testCheck
 ) {
 }
